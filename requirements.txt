@@ -1,0 +1,6 @@
+# Slicer by Claude — Dependencias Python
+customtkinter>=5.2.0
+Pillow>=10.0.0
+tkinterdnd2>=0.3.0
+win10toast>=0.9
+pyinstaller>=6.0.0
