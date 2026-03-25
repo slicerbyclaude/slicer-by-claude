@@ -1,5 +1,5 @@
 """
-Slicer by Claude - Ventana principal v1.9.0
+Slicer by Claude - Ventana principal v1.9.1
 Novedades:
 - Miniaturas eliminadas de la línea de tiempo (rendimiento)
 - Botón "Quitar video" para limpiar el video cargado
@@ -717,7 +717,7 @@ class SlicerApp(ctk.CTk):
         top = ctk.CTkFrame(parent, fg_color="transparent")
         top.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8,4))
         top.columnconfigure(0, weight=2)
-        top.columnconfigure(1, weight=3)
+        top.columnconfigure(1, weight=4)
         top.rowconfigure(0, weight=1)
 
         # ── Panel izquierdo: Reproductor ──
@@ -759,7 +759,7 @@ class SlicerApp(ctk.CTk):
                                command=self._on_ratio_change).pack(side="left", padx=4)
 
         # VLC frame - altura fija para que los controles siempre sean visibles
-        self.vlc_frame = ctk.CTkFrame(left, fg_color="#000000", corner_radius=8, height=280)
+        self.vlc_frame = ctk.CTkFrame(left, fg_color="#000000", corner_radius=8, height=210)
         self.vlc_frame.pack(fill="x", padx=12, pady=(0,4))
         self.vlc_frame.pack_propagate(False)
         self.vlc_placeholder = ctk.CTkLabel(self.vlc_frame, text="Sin video",
@@ -1516,21 +1516,23 @@ class SlicerApp(ctk.CTk):
         self._waveform_data = []
         try:
             cmd = [self.ffmpeg_path, "-y", "-i", self.video_path,
-                   "-ac","1","-ar","8000","-f","s16le","-"]
+                   "-ac","1","-ar","4000","-f","s16le","-"]  # 4000 Hz es suficiente para visualizar
             flags = subprocess.CREATE_NO_WINDOW if os.name=="nt" else 0
+            # Prioridad baja en Windows para no bloquear la UI
+            creation_flags = flags | subprocess.BELOW_NORMAL_PRIORITY_CLASS if os.name=="nt" else flags
             result = subprocess.run(cmd, capture_output=True, timeout=60,
-                                    creationflags=flags)
+                                    creationflags=creation_flags)
             if result.returncode==0 and result.stdout:
                 raw = result.stdout
                 n = len(raw)//2
                 samples = struct.unpack(f"{n}h", raw[:n*2])
-                chunk = max(1, n//800)
+                chunk = max(1, n//600)  # menos puntos = más rápido
                 waveform = []
                 for i in range(0, n, chunk):
                     cd = samples[i:i+chunk]
                     if cd: waveform.append(max(abs(s) for s in cd)/32768.0)
                 self._waveform_data = waveform
-                self.after(0, self._tl_draw)
+                self.after(0, self._tl_draw)  # un solo redibujado al terminar
         except: pass
 
     # ── Proceso btn y log ─────────────────────────────────────────────────────
@@ -1714,11 +1716,27 @@ class SlicerApp(ctk.CTk):
                             font=ctk.CTkFont(size=12, family="Courier"))
 
     def _help(self, parent, text):
+        def show_help():
+            def build(panel):
+                self._panel_header(panel, "Ayuda", width=320)
+                body = ctk.CTkFrame(panel, fg_color="transparent", width=320)
+                body.pack(padx=20, pady=16)
+                ctk.CTkLabel(body, text="ℹ", font=ctk.CTkFont(size=28),
+                             text_color=ACCENT_DIM).pack()
+                ctk.CTkLabel(body, text=text,
+                             font=ctk.CTkFont(size=12), text_color=TEXT_SEC,
+                             justify="center", wraplength=270).pack(pady=10)
+                ctk.CTkButton(body, text="Entendido",
+                              fg_color=ACCENT, hover_color=ACCENT_DIM,
+                              text_color=BG_ROOT, height=32,
+                              font=ctk.CTkFont(size=11),
+                              command=self._close_overlay).pack(fill="x")
+            self._show_overlay(build, width=320)
         ctk.CTkButton(parent, text="?", width=24, height=24,
                       fg_color=BG_ELEVATED, border_width=1, border_color=BORDER,
                       text_color=TEXT_MUTED, hover_color=BG_CARD,
                       font=ctk.CTkFont(size=10),
-                      command=lambda: messagebox.showinfo("Ayuda", text)).pack(side="left")
+                      command=show_help).pack(side="left")
 
     def _toast(self, msg, kind="success"):
         show_toast(self, msg, kind)

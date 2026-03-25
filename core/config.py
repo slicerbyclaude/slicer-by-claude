@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "Slicer by Claude"
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 LOG_FILENAME = "slicer_log.txt"
 
 CONFIG_DIR   = Path.home() / ".slicer_by_claude"
