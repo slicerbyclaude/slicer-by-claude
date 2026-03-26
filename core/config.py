@@ -16,7 +16,7 @@ PRESETS_FILE = CONFIG_DIR / "text_presets.json"
 
 # FFmpeg export settings
 VIDEO_CODEC      = "libx265"
-VIDEO_BITRATE    = "3000k"
+VIDEO_BITRATE    = "2000k"
 VIDEO_FPS        = 30
 AUDIO_CODEC      = "aac"
 AUDIO_BITRATE    = "192k"

@@ -328,8 +328,9 @@ class SlicerApp(ctk.CTk):
                                font=ctk.CTkFont(size=10), text_color=TEXT_SEC,
                                command=self._on_ratio_change).pack(side="left", padx=4)
 
-        self.vlc_frame = ctk.CTkFrame(panel, fg_color="#000000", corner_radius=8)
-        self.vlc_frame.pack(fill="both", expand=True, padx=12, pady=(0,4))
+        self.vlc_frame = ctk.CTkFrame(panel, fg_color="#000000", corner_radius=8, height=200)
+        self.vlc_frame.pack(fill="x", padx=12, pady=(0,4))
+        self.vlc_frame.pack_propagate(False)
         self.vlc_placeholder = ctk.CTkLabel(self.vlc_frame, text="Sin video",
                                              fg_color="transparent",
                                              text_color=TEXT_MUTED,
@@ -572,17 +573,34 @@ class SlicerApp(ctk.CTk):
     # ── Paneles flotantes internos ────────────────────────────────────────────
     def _show_overlay(self, build_fn, width=460):
         self._close_overlay()
-        self._overlay_bg = ctk.CTkFrame(self, fg_color="#00000099", corner_radius=0)
+        # Fondo oscuro usando tk nativo para capturar clicks correctamente
+        import tkinter as tk
+        self._overlay_bg = tk.Frame(self, bg="#000000")
         self._overlay_bg.place(x=0, y=0, relwidth=1, relheight=1)
+        self._overlay_bg.configure(cursor="arrow")
         self._overlay_bg.bind("<Button-1>", lambda e: self._close_overlay())
+        # Reducir opacidad del fondo visualmente con un label negro semi-transparente
+        # Panel flotante centrado
         self._overlay_panel = ctk.CTkFrame(self._overlay_bg,
                                             fg_color=BG_PANEL, corner_radius=12,
                                             border_width=1, border_color=BORDER_ACCENT,
                                             width=width)
+        self.update_idletasks()
         self._overlay_panel.place(relx=0.5, rely=0.5, anchor="center")
+        # Evitar que clicks en el panel cierren el overlay
         self._overlay_panel.bind("<Button-1>", lambda e: "break")
         build_fn(self._overlay_panel)
         self._overlay_panel.lift()
+        self._overlay_bg.lift()
+        self._overlay_panel.lift()
+
+    def _bind_panel_children(self, widget):
+        """Evita que clicks en cualquier hijo del panel cierren el overlay."""
+        try:
+            widget.bind("<Button-1>", lambda e: "break")
+            for child in widget.winfo_children():
+                self._bind_panel_children(child)
+        except: pass
 
     def _close_overlay(self):
         try:
@@ -622,6 +640,7 @@ class SlicerApp(ctk.CTk):
             body = ctk.CTkFrame(panel, fg_color="transparent")
             body.pack(fill="x", padx=18, pady=12)
 
+            # Estado actual
             self._overlay_sec(body, "ESTADO ACTUAL")
             sc = ctk.CTkFrame(body, fg_color=BG_ELEVATED, corner_radius=8,
                                border_width=1, border_color=BORDER)
@@ -630,52 +649,58 @@ class SlicerApp(ctk.CTk):
             intro_sec = parse_time(self.intro_entry.get()) if hasattr(self,"intro_entry") else None
             cuts      = self._get_cuts()
             for ok, lbl, val in [
-                (video_ok,           "Video",  os.path.basename(self.video_path)[:24] if self.video_path else "Sin video"),
-                (intro_sec is not None,"Intro", format_duration(intro_sec) if intro_sec else "No configurada"),
-                (bool(cuts),          "Cortes", f"{len(cuts)} corte(s)" if cuts else "Sin cortes"),
+                (video_ok,             "Video",  os.path.basename(self.video_path)[:26] if self.video_path else "Sin video"),
+                (intro_sec is not None,"Intro",  format_duration(intro_sec) if intro_sec else "No configurada"),
+                (bool(cuts),           "Cortes", f"{len(cuts)} corte(s) — {len(cuts)+1} partes" if cuts else "Sin cortes"),
             ]:
                 r = ctk.CTkFrame(sc, fg_color="transparent")
-                r.pack(fill="x", padx=10, pady=3)
+                r.pack(fill="x", padx=10, pady=4)
                 ctk.CTkLabel(r, text="✅" if ok else "❌",
                              font=ctk.CTkFont(size=12),
                              text_color=SUCCESS if ok else DANGER,
                              width=24).pack(side="left")
                 ctk.CTkLabel(r, text=lbl, font=ctk.CTkFont(size=11),
-                             text_color=TEXT_SEC, width=50, anchor="w").pack(side="left")
+                             text_color=TEXT_SEC, width=55, anchor="w").pack(side="left")
                 ctk.CTkLabel(r, text=val, font=ctk.CTkFont(size=10),
                              text_color=TEXT_MUTED).pack(side="left", padx=4)
 
-            self._overlay_sec(body, "CONFIGURACIÓN")
+            # Config de exportación (solo lectura, no editable)
+            self._overlay_sec(body, "CONFIGURACIÓN DE EXPORTACIÓN")
             cfg = ctk.CTkFrame(body, fg_color=BG_ELEVATED, corner_radius=8,
                                border_width=1, border_color=BORDER)
-            cfg.pack(fill="x", pady=(0,10))
-            fps = self.video_info.get("fps", 0)
-            for i, (lbl, val) in enumerate([
-                ("Codec","HEVC (H.265)"), ("Resolución","1080p forzado"),
-                ("FPS","30fps" + (f"  ⚠ video: {fps}fps" if fps and abs(fps-30)>1 else "")),
-                ("Bits","3000 kbps"), ("Audio","AAC 192k"), ("Formato",".mp4"),
+            cfg.pack(fill="x", pady=(0,14))
+            for i, (lbl, val, icon) in enumerate([
+                ("Codec",        "HEVC  (H.265)",  "🎬"),
+                ("Resolución",   "1080p",          "📐"),
+                ("Cuadros/seg",  "30 fps",         "🎞"),
+                ("Tasa de bits", "2000 kbps",      "📊"),
+                ("Audio",        "AAC  192k",      "🔊"),
+                ("Formato",      ".mp4",           "📁"),
             ]):
                 bg = BG_ELEVATED if i % 2 == 0 else BG_CARD
                 r = ctk.CTkFrame(cfg, fg_color=bg, corner_radius=0)
                 r.pack(fill="x")
-                ctk.CTkLabel(r, text=lbl, width=80, anchor="w",
-                             font=ctk.CTkFont(size=10), text_color=TEXT_MUTED
-                             ).pack(side="left", padx=(10,0), pady=3)
+                ctk.CTkLabel(r, text=icon, font=ctk.CTkFont(size=12),
+                             width=28).pack(side="left", padx=(8,0), pady=5)
+                ctk.CTkLabel(r, text=lbl, width=90, anchor="w",
+                             font=ctk.CTkFont(size=11), text_color=TEXT_MUTED
+                             ).pack(side="left", padx=(4,0))
                 ctk.CTkLabel(r, text=val, anchor="w",
-                             font=ctk.CTkFont(size=10, weight="bold"),
-                             text_color=WARNING if "⚠" in val else TEXT_PRIMARY
-                             ).pack(side="left", padx=4)
+                             font=ctk.CTkFont(size=11, weight="bold"),
+                             text_color=TEXT_PRIMARY).pack(side="left", padx=4)
 
+            # Botones
             all_ok = video_ok and intro_sec is not None and bool(cuts)
             ctk.CTkButton(body,
-                          text="✔  PROCESAR VIDEO" if all_ok else "▶  PROCESAR VIDEO",
-                          fg_color=SUCCESS if all_ok else ACCENT,
-                          hover_color="#16a34a" if all_ok else ACCENT_HOVER,
-                          text_color="#fff", height=42,
+                          text="✔  CONFIRMAR Y EXPORTAR" if all_ok else "⚠  Completa la configuración primero",
+                          fg_color=ACCENT if all_ok else BG_ELEVATED,
+                          hover_color=ACCENT_HOVER if all_ok else BG_ELEVATED,
+                          text_color="#fff" if all_ok else TEXT_MUTED,
+                          height=44,
                           font=ctk.CTkFont(size=13, weight="bold"),
                           state="normal" if all_ok else "disabled",
                           command=lambda: [self._close_overlay(), self._start_export()]
-                          ).pack(fill="x", pady=(4,4))
+                          ).pack(fill="x", pady=(0,6))
             ctk.CTkButton(body, text="Cancelar", height=32,
                           fg_color="transparent", border_width=1, border_color=BORDER,
                           text_color=TEXT_MUTED, hover_color=BG_ELEVATED,
@@ -939,11 +964,10 @@ class SlicerApp(ctk.CTk):
     def _apply_ratio(self):
         ratio = self._ratio_var.get() if self._ratio_var else PLAYER_RATIO_DEFAULT
         w_parts, h_parts = PLAYER_RATIOS.get(ratio, (9, 16))
-        self.update_idletasks()
-        pw = self.vlc_frame.winfo_width() or 320
-        if pw < 50: pw = 320
-        h = int(pw * h_parts / w_parts)
-        h = max(120, min(h, 320))
+        # Altura fija basada en proporción, máximo 260px
+        base_w = 280
+        h = int(base_w * h_parts / w_parts)
+        h = max(140, min(h, 260))
         self.vlc_frame.configure(height=h)
 
     # ── VLC ───────────────────────────────────────────────────────────────────
@@ -1254,16 +1278,8 @@ class SlicerApp(ctk.CTk):
         if errors:
             msg = "Problemas detectados:\n\n" + "\n".join(f"• {e}" for e in errors)
             if not messagebox.askyesno("Validación", msg+"\n\n¿Continuar?", icon="warning"): return
-        total = len(cuts)+1
-        durs  = get_segment_durations(cuts, duration)
-        lines = [f"Video: {os.path.basename(self.video_path)}",
-                 f"Partes: {total}  |  Intro: {format_duration(intro_sec)}",
-                 f"Preset: {self.speed_var.get()}", ""]
-        for i, d in enumerate(durs):
-            lbl = "Parte Final" if i+1==total else f"Parte {i+1}"
-            lines.append(f"  {lbl}: {format_duration(intro_sec+d)}")
-        if not messagebox.askyesno("Confirmar", "\n".join(lines)+"\n\n¿Comenzar?"): return
 
+        total = len(cuts) + 1
         out_dir = self.settings.get("output_dir", r"C:\Videos_Trabajo")
         vname   = Path(self.video_path).stem
         out     = Path(out_dir) / f"{vname}_partes"
@@ -1271,8 +1287,10 @@ class SlicerApp(ctk.CTk):
             choice = messagebox.askyesnocancel("Carpeta existente",
                 f"Ya existe:\n{out}\n\n¿Sobreescribir?")
             if choice is None: return
-            if not choice:
+            if choice:
                 import shutil; shutil.rmtree(out)
+            else:
+                return
         out.mkdir(parents=True, exist_ok=True)
 
         if self._vlc and self._vlc.is_playing(): self._vlc.pause()
