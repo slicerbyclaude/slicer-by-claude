@@ -9,9 +9,10 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import customtkinter as ctk
-from core.config import APP_NAME, load_settings, save_settings
+from core.config import APP_NAME, APP_VERSION, load_settings, save_settings
 from ui.setup_screen import SetupScreen
 from ui.main_window import SlicerApp
+from core.updater import maybe_update_self
 
 
 def main():
@@ -47,6 +48,20 @@ def main():
         dep_results = {}
 
     # Abrir ventana principal
+    # Auto-update (si hay una Release nueva) antes de mostrar la app.
+    # Si se agenda un update, el updater reemplazará el .exe y relanzará.
+    try:
+        if maybe_update_self(APP_VERSION, settings=settings):
+            sys.exit(0)
+    except Exception:
+        pass
+    # Marcar el chequeo para no preguntar en cada arranque (best-effort).
+    try:
+        settings["last_update_check_ts"] = int(__import__("time").time())
+        save_settings(settings)
+    except Exception:
+        pass
+
     app = SlicerApp(dep_results)
     app.mainloop()
 
