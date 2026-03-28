@@ -1,6 +1,5 @@
 """
-Slicer by Claude - v2.0.0
-Base limpia v1.2.0 + paleta morada + paneles flotantes + logo S + bugs corregidos
+Slicer by Claude - v2.0.1
 """
 import os
 import time
@@ -24,7 +23,7 @@ from core.config import (
     APP_NAME, APP_VERSION,
     PRESETS_SPEED, PRESETS_SPEED_DESC, PRESET_DEFAULT,
     TEXT_DEFAULTS, PLAYER_RATIOS, PLAYER_RATIO_DEFAULT,
-    HISTORY_SIZE_OPTIONS,
+    MAX_HISTORY_ITEMS,
     VIDEO_CODEC, VIDEO_BITRATE, VIDEO_FPS, AUDIO_CODEC, AUDIO_BITRATE,
     load_settings, save_settings, load_history, save_history,
     load_presets, save_presets, get_cache_size_mb, clear_cache,
@@ -131,6 +130,16 @@ class VLCPlayer:
             self.player.set_hwnd(self.widget.winfo_id())
             return True
         except: return False
+
+    def set_aspect_ratio(self, ratio_key: str):
+        """Fuerza relación de aspecto en VLC para que el video no desborde el marco."""
+        if not self._ok or not self.player:
+            return
+        try:
+            # Formato tipo "16:9", "9:16", "4:3", "1:1"
+            self.player.video_set_aspect_ratio(ratio_key)
+        except Exception:
+            pass
 
     def play(self):
         if self._ok and self.player: self.player.play()
@@ -292,27 +301,6 @@ class SlicerApp(ctk.CTk):
                       height=36, font=ctk.CTkFont(size=12, weight="bold"),
                       command=self._browse_video).pack(fill="x", padx=12, pady=(0,10))
 
-        self._sec(panel, "INFORMACIÓN DEL VIDEO")
-        info_card = ctk.CTkFrame(panel, fg_color=BG_ELEVATED, corner_radius=8,
-                                  border_width=1, border_color=BORDER)
-        info_card.pack(fill="x", padx=12, pady=(0,8))
-        self.info_labels = {}
-        for i, (lbl, key) in enumerate([
-            ("Archivo","name"), ("Duración","duration"),
-            ("Resolución","resolution"), ("FPS","fps"),
-            ("Codec video","codec"), ("Codec audio","audio"),
-        ]):
-            bg = BG_ELEVATED if i % 2 == 0 else BG_CARD
-            row = ctk.CTkFrame(info_card, fg_color=bg, corner_radius=0)
-            row.pack(fill="x")
-            ctk.CTkLabel(row, text=lbl, width=85, anchor="w",
-                         font=ctk.CTkFont(size=11), text_color=TEXT_MUTED
-                         ).pack(side="left", padx=(10,0), pady=4)
-            val = ctk.CTkLabel(row, text="—", anchor="w",
-                               font=ctk.CTkFont(size=11), text_color=TEXT_PRIMARY)
-            val.pack(side="left", padx=4)
-            self.info_labels[key] = val
-
         self._sec(panel, "MINI REPRODUCTOR")
         # Selector de proporción
         ratio_row = ctk.CTkFrame(panel, fg_color="transparent")
@@ -337,6 +325,7 @@ class SlicerApp(ctk.CTk):
                                              font=ctk.CTkFont(size=12))
         self.vlc_placeholder.place(relx=0.5, rely=0.5, anchor="center")
         self._apply_ratio()
+        self.vlc_frame.bind("<Configure>", self._on_vlc_frame_configure)
 
         self.player_var = ctk.DoubleVar(value=0)
         self.player_slider = ctk.CTkSlider(panel, from_=0, to=100,
@@ -347,29 +336,54 @@ class SlicerApp(ctk.CTk):
                                             height=12, command=self._on_seek)
         self.player_slider.pack(fill="x", padx=12, pady=(0,4))
 
+        # Grid: evita que el área de video (proporciones altas) empuje o solape los controles
         ctrl = ctk.CTkFrame(panel, fg_color="transparent")
         ctrl.pack(fill="x", padx=12, pady=(0,8))
-        self.play_btn = ctk.CTkButton(ctrl, text="▶", width=36, height=32,
+        ctrl.grid_columnconfigure(1, weight=1)
+        left_btns = ctk.CTkFrame(ctrl, fg_color="transparent")
+        left_btns.grid(row=0, column=0, sticky="w")
+        self.play_btn = ctk.CTkButton(left_btns, text="▶", width=36, height=32,
                                        fg_color=ACCENT, hover_color=ACCENT_HOVER,
                                        text_color="#fff", font=ctk.CTkFont(size=13),
                                        command=self._toggle_play)
         self.play_btn.pack(side="left", padx=(0,4))
-        self.mute_btn = ctk.CTkButton(ctrl, text="🔊", width=32, height=32,
+        self.mute_btn = ctk.CTkButton(left_btns, text="🔊", width=32, height=32,
                                        fg_color=BG_ELEVATED, hover_color=BG_CARD,
                                        font=ctk.CTkFont(size=12),
                                        command=self._toggle_mute)
-        self.mute_btn.pack(side="left", padx=(0,8))
+        self.mute_btn.pack(side="left")
         self.time_lbl = ctk.CTkLabel(ctrl, text="0:00.00",
                                       font=ctk.CTkFont(size=12, family="Courier"),
                                       text_color=ACCENT_GLOW)
-        self.time_lbl.pack(side="left")
+        self.time_lbl.grid(row=0, column=1, sticky="w", padx=(8, 8))
         ctk.CTkButton(ctrl, text="✂  Usar tiempo", height=32,
                       fg_color=BG_ELEVATED, border_width=1, border_color=BORDER_ACCENT,
                       text_color=ACCENT_GLOW, hover_color=BG_CARD,
                       font=ctk.CTkFont(size=10),
-                      command=self._use_current_time).pack(side="right")
+                      command=self._use_current_time).grid(row=0, column=2, sticky="e")
 
         self.after(200, self._init_vlc)
+
+        self._sec(panel, "INFORMACIÓN DEL VIDEO")
+        info_card = ctk.CTkFrame(panel, fg_color=BG_ELEVATED, corner_radius=8,
+                                  border_width=1, border_color=BORDER)
+        info_card.pack(fill="x", padx=12, pady=(0,8))
+        self.info_labels = {}
+        for i, (lbl, key) in enumerate([
+            ("Archivo","name"), ("Duración","duration"),
+            ("Resolución","resolution"), ("FPS","fps"),
+            ("Codec video","codec"), ("Codec audio","audio"),
+        ]):
+            bg = BG_ELEVATED if i % 2 == 0 else BG_CARD
+            row = ctk.CTkFrame(info_card, fg_color=bg, corner_radius=0)
+            row.pack(fill="x")
+            ctk.CTkLabel(row, text=lbl, width=85, anchor="w",
+                         font=ctk.CTkFont(size=11), text_color=TEXT_MUTED
+                         ).pack(side="left", padx=(10,0), pady=4)
+            val = ctk.CTkLabel(row, text="—", anchor="w",
+                               font=ctk.CTkFont(size=11), text_color=TEXT_PRIMARY)
+            val.pack(side="left", padx=4)
+            self.info_labels[key] = val
 
     # ── Panel central ─────────────────────────────────────────────────────────
     def _build_center(self, parent):
@@ -400,21 +414,25 @@ class SlicerApp(ctk.CTk):
         speed_card = ctk.CTkFrame(scroll, fg_color=BG_ELEVATED, corner_radius=8,
                                    border_width=1, border_color=BORDER)
         speed_card.pack(fill="x", padx=12, pady=(0,10))
+        self._speed_name_labels = {}
         for preset in PRESETS_SPEED:
-            is_rec = preset == PRESET_DEFAULT
             row = ctk.CTkFrame(speed_card, fg_color="transparent")
             row.pack(fill="x", padx=10, pady=3)
             ctk.CTkRadioButton(row, text="", variable=self.speed_var, value=preset,
                                radiobutton_width=14, radiobutton_height=14,
                                fg_color=ACCENT, hover_color=ACCENT_HOVER,
                                width=20).pack(side="left")
-            ctk.CTkLabel(row, text=preset,
-                         font=ctk.CTkFont(size=11, weight="bold"),
-                         text_color=ACCENT_GLOW if is_rec else TEXT_PRIMARY,
-                         width=75, anchor="w").pack(side="left", padx=(2,0))
+            name_lbl = ctk.CTkLabel(row, text=preset,
+                                    font=ctk.CTkFont(size=11, weight="bold"),
+                                    text_color=TEXT_PRIMARY,
+                                    width=75, anchor="w")
+            name_lbl.pack(side="left", padx=(2,0))
+            self._speed_name_labels[preset] = name_lbl
             ctk.CTkLabel(row, text=PRESETS_SPEED_DESC[preset],
                          font=ctk.CTkFont(size=10), text_color=TEXT_MUTED,
                          anchor="w").pack(side="left")
+        self.speed_var.trace_add("write", lambda *_: self._refresh_speed_label_colors())
+        self._refresh_speed_label_colors()
 
         self._sec(scroll, "LÍNEA DE TIEMPO")
         self.timeline_canvas = ctk.CTkCanvas(scroll, height=52, bg=BG_INPUT,
@@ -747,18 +765,6 @@ class SlicerApp(ctk.CTk):
                           command=lambda: self._browse_folder(self._log_dir_var)
                           ).pack(side="right", padx=6)
 
-            sec("TAMAÑO DEL HISTORIAL")
-            hr = ctk.CTkFrame(scroll, fg_color="transparent")
-            hr.pack(fill="x", pady=(0,8))
-            self._hist_size_var = ctk.IntVar(value=self.settings.get("history_max", 5))
-            for size in HISTORY_SIZE_OPTIONS:
-                ctk.CTkRadioButton(hr, text=f"{size} videos",
-                                   variable=self._hist_size_var, value=size,
-                                   radiobutton_width=12, radiobutton_height=12,
-                                   fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                                   font=ctk.CTkFont(size=11), text_color=TEXT_SEC
-                                   ).pack(side="left", padx=8)
-
             sec("LÍMITES DE ADVERTENCIA")
             lc = ctk.CTkFrame(scroll, fg_color=BG_ELEVATED, corner_radius=8,
                               border_width=1, border_color=BORDER)
@@ -868,7 +874,6 @@ class SlicerApp(ctk.CTk):
             self._toast("Valores de límite inválidos", "error"); return
         self.settings["output_dir"]          = self._out_dir_var.get()
         self.settings["logs_dir"]            = self._log_dir_var.get()
-        self.settings["history_max"]         = self._hist_size_var.get()
         self.settings["warn_max_duration"]   = dur_min * 60
         self.settings["warn_max_size_mb"]    = size_mb
         save_settings(self.settings)
@@ -954,6 +959,8 @@ class SlicerApp(ctk.CTk):
         self.settings["player_ratio"] = ratio
         save_settings(self.settings)
         self._apply_ratio()
+        if self._vlc and self._vlc._ok:
+            self._vlc.set_aspect_ratio(ratio)
         if self._vlc and self._vlc._ok and self.video_path:
             self.after(100, lambda: [
                 self._vlc.load(self.video_path),
@@ -964,11 +971,28 @@ class SlicerApp(ctk.CTk):
     def _apply_ratio(self):
         ratio = self._ratio_var.get() if self._ratio_var else PLAYER_RATIO_DEFAULT
         w_parts, h_parts = PLAYER_RATIOS.get(ratio, (9, 16))
-        # Altura fija basada en proporción, máximo 260px
+        # Altura del marco: en 9:16 (vertical) no subir tanto para no empujar
+        # slider/controles fuera de la ventana visible.
         base_w = 280
         h = int(base_w * h_parts / w_parts)
-        h = max(140, min(h, 260))
+        max_h = 200 if h_parts > w_parts else 248
+        h = max(140, min(h, max_h))
         self.vlc_frame.configure(height=h)
+
+    def _on_vlc_frame_configure(self, event=None):
+        if event is not None and getattr(event, "widget", None) is not self.vlc_frame:
+            return
+        if self._vlc and self._vlc._ok and self._ratio_var:
+            self._vlc.set_aspect_ratio(self._ratio_var.get())
+
+    def _refresh_speed_label_colors(self):
+        if not getattr(self, "_speed_name_labels", None):
+            return
+        cur = self.speed_var.get()
+        for preset, lbl in self._speed_name_labels.items():
+            lbl.configure(
+                text_color=ACCENT_GLOW if preset == cur else TEXT_PRIMARY
+            )
 
     # ── VLC ───────────────────────────────────────────────────────────────────
     def _init_vlc(self):
@@ -1059,6 +1083,8 @@ class SlicerApp(ctk.CTk):
             ratio = "9:16" if h > w else ("16:9" if w > h else "1:1")
             if self._ratio_var: self._ratio_var.set(ratio)
             self._apply_ratio()
+        if self._vlc and self._vlc._ok and self._ratio_var:
+            self._vlc.set_aspect_ratio(self._ratio_var.get())
         self._update_timeline()
         self._toast(f"Video cargado: {name[:28]}", "success")
 
@@ -1409,9 +1435,8 @@ class SlicerApp(ctk.CTk):
                  "parts": len(self.export_results),
                  "duration": format_duration(self.video_info.get("duration",0))}
         self.history = [entry] + [h for h in self.history if h["path"] != self.video_path]
-        max_h = self.settings.get("history_max", 5)
-        self.history = self.history[:max_h]
-        save_history(self.history, max_h)
+        self.history = self.history[:MAX_HISTORY_ITEMS]
+        save_history(self.history, MAX_HISTORY_ITEMS)
 
     # ── Reset ─────────────────────────────────────────────────────────────────
     def _reset_all(self):

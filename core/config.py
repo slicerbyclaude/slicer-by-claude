@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "Slicer by Claude"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 LOG_FILENAME = "slicer_log.txt"
 
 CONFIG_DIR   = Path.home() / ".slicer_by_claude"
@@ -20,12 +20,12 @@ VIDEO_BITRATE    = "2000k"
 VIDEO_FPS        = 30
 AUDIO_CODEC      = "aac"
 AUDIO_BITRATE    = "192k"
-PRESET_DEFAULT   = "medium"
+PRESET_DEFAULT   = "ultrafast"
 PRESETS_SPEED    = ["ultrafast", "fast", "medium", "slow", "veryslow"]
 PRESETS_SPEED_DESC = {
-    "ultrafast": "Muy rápido — archivo más pesado",
+    "ultrafast": "Muy rápido — archivo más pesado (recomendado por defecto)",
     "fast":      "Rápido — buen balance",
-    "medium":    "Balance ideal — recomendado ✓",
+    "medium":    "Balance ideal",
     "slow":      "Lento — archivo más liviano",
     "veryslow":  "Muy lento — máxima compresión",
 }
@@ -48,7 +48,8 @@ PLAYER_RATIOS = {
 }
 PLAYER_RATIO_DEFAULT = "9:16"
 
-HISTORY_SIZE_OPTIONS = [5, 10, 20]
+# Historial: límite fijo (ya no configurable en UI)
+MAX_HISTORY_ITEMS = 10
 
 def ensure_config_dir():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,7 +76,6 @@ def load_settings() -> dict:
         "text_preset_active": "Por defecto",
         "output_dir":         r"C:\Videos_Trabajo",
         "logs_dir":           r"C:\Videos_Trabajo",
-        "history_max":        5,
         "warn_max_duration":  600,
         "warn_max_size_mb":   500,
         "player_ratio":       PLAYER_RATIO_DEFAULT,
